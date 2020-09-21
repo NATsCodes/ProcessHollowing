@@ -6,11 +6,11 @@ This is a simple CPP program for Process Hollowing.
 
 Usage:
 
-Process Hollowing.exe [Host_Process_File] [Injectet_File]
+Process Hollowing.exe [Host Process File] [Injectet File]
 
--- Host_Process_File - PE file wich will serve as the host process for the Injectet File.
+- Host_Process_File - PE file wich will serve as the host process for the Injectet File.
 
--- Injectet_File - PE file wich will be injectet in to the host process.
+- Injectet_File - PE file wich will be injectet in to the host process.
 
 
 Notes:
