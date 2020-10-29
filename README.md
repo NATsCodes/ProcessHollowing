@@ -1,16 +1,12 @@
 # Process-Hollowing
 This is a Process Hollowing POC in CPP
 
-This is a simple CPP program for Process Hollowing.
--
+<h4>Usage:</h4>
 
-Usage:
+Process Hollowing.exe [Host Process File] [Injected File]
 
-Process Hollowing.exe [Host Process File] [Injectet File]
-
-- Host_Process_File - PE file wich will serve as the host process for the Injectet File.
-
-- Injectet_File - PE file wich will be injectet in to the host process.
+- Host Process File - PE file wich will serve as the host process for the Injectet File.
+- Injected File - PE file wich will be injectet in to the host process.
 
 
 Notes:
